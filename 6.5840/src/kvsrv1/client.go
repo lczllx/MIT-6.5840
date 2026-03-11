@@ -1,18 +1,21 @@
 package kvsrv
 
 import (
+	"time"
+
 	"6.5840/kvsrv1/rpc"
-	"6.5840/kvtest1"
-	"6.5840/tester1"
+	kvtest "6.5840/kvtest1"
+	tester "6.5840/tester1"
 )
 
-
+// 客户端描述结构体
 type Clerk struct {
-	clnt   *tester.Clnt
-	server string
+	clnt   *tester.Clnt //客户端句柄
+	server string       //服务器名称
 }
 
 func MakeClerk(clnt *tester.Clnt, server string) kvtest.IKVClerk {
+	DPrintf("in MakeClerk")
 	ck := &Clerk{clnt: clnt, server: server}
 	// You may add code here.
 	return ck
@@ -30,7 +33,22 @@ func MakeClerk(clnt *tester.Clnt, server string) kvtest.IKVClerk {
 // arguments. Additionally, reply must be passed as a pointer.
 func (ck *Clerk) Get(key string) (string, rpc.Tversion, rpc.Err) {
 	// You will have to modify this function.
-	return "", 0, rpc.ErrNoKey
+	DPrintf("in client Get")
+	args := rpc.GetArgs{Key: key}
+	reply := rpc.GetReply{}
+	ok := ck.clnt.Call(ck.server, "KVServer.Get", &args, &reply)
+	if ok {
+		return reply.Value, reply.Version, reply.Err
+	}
+	DPrintf("in get retry")
+	for {
+		ok = ck.clnt.Call(ck.server, "KVServer.Get", &args, &reply)
+		if ok {
+			return reply.Value, reply.Version, reply.Err //第一次测试时没有加，导致测试不通过
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	//return "", 0, rpc.ErrNoKey
 }
 
 // Put updates key with value only if the version in the
@@ -52,5 +70,39 @@ func (ck *Clerk) Get(key string) (string, rpc.Tversion, rpc.Err) {
 // arguments. Additionally, reply must be passed as a pointer.
 func (ck *Clerk) Put(key, value string, version rpc.Tversion) rpc.Err {
 	// You will have to modify this function.
-	return rpc.ErrNoKey
+	DPrintf("in client Put")
+	args := rpc.PutArgs{Key: key, Value: value, Version: version}
+	reply := rpc.PutReply{}
+	isfirst := true
+
+	//不能限制其重试的次数
+	// retries := 0
+	// maxRetries := 3  // 最大重试次数
+	for {
+		ok := ck.clnt.Call(ck.server, "KVServer.Put", &args, &reply)
+
+		if !ok { // RPC 失败（网络问题），标记已发送，继续重试
+			DPrintf("Put RPC failed, retrying...")
+			isfirst = false
+			// retries++
+			// if retries >= maxRetries {
+			// 	return rpc.ErrNoKey
+			// }
+			time.Sleep(5 * time.Millisecond)
+			continue
+		}
+		if reply.Err == rpc.OK || reply.Err == rpc.ErrNoKey {
+			return reply.Err
+		}
+
+		// 第一次“有效回复”且为 ErrVersion → 肯定没执行；曾发生过 ok==false 再收到 ErrVersion → 可能已执行过
+		if reply.Err == rpc.ErrVersion {
+			if isfirst {
+				return rpc.ErrVersion
+			}
+			return rpc.ErrMaybe
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	//return rpc.ErrNoKey
 }
