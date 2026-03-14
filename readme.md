@@ -88,3 +88,21 @@ ok      6.5840/mr       151.614s
 - --- PASS: TestManyClientsUnreliable (3.24s)
 - PASS
 - ok      6.5840/kvsrv1/lock      11.178s
+
+lcz@iv-yef3xahqtc5i3z5jzmr5:~/mit6.5840/6.5840/src$ make RUN="-run 3A" raft1
+go build -race -o main/raft1d main/raft1d.go
+cd raft1 && go test -v -race -run 3A 
+=== RUN   TestInitialElection3A
+Test (3A): initial election (reliable network)...
+  ... Passed --  time  3.0s #peers 3 #RPCs   192 #Ops    0
+--- PASS: TestInitialElection3A (3.47s)
+=== RUN   TestReElection3A
+Test (3A): election after network failure (reliable network)...
+  ... Passed --  time  4.6s #peers 3 #RPCs   390 #Ops    0
+--- PASS: TestReElection3A (5.12s)
+=== RUN   TestManyElections3A
+Test (3A): multiple elections (reliable network)...
+  ... Passed --  time  5.6s #peers 7 #RPCs  1680 #Ops    0
+--- PASS: TestManyElections3A (6.59s)
+PASS
+ok      6.5840/raft1    16.203s
