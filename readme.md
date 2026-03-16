@@ -106,3 +106,49 @@ Test (3A): multiple elections (reliable network)...
 --- PASS: TestManyElections3A (6.59s)
 PASS
 ok      6.5840/raft1    16.203s
+
+lcz@iv-yef3xahqtc5i3z5jzmr5:~/mit6.5840/6.5840/src$ make RUN="-run 3B" raft1
+go build -race -o main/raft1d main/raft1d.go
+cd raft1 && go test -v -race -run 3B 
+=== RUN   TestBasicAgree3B
+Test (3B): basic agreement (reliable network)...
+  ... Passed --  time  0.4s #peers 3 #RPCs    14 #Ops    3
+--- PASS: TestBasicAgree3B (0.71s)
+=== RUN   TestRPCBytes3B
+Test (3B): RPC byte count (reliable network)...
+  ... Passed --  time  1.8s #peers 3 #RPCs    58 #Ops   11
+--- PASS: TestRPCBytes3B (2.14s)
+=== RUN   TestFollowerFailure3B
+Test (3B): test progressive failure of followers (reliable network)...
+  ... Passed --  time  4.3s #peers 3 #RPCs   188 #Ops    3
+--- PASS: TestFollowerFailure3B (4.67s)
+=== RUN   TestLeaderFailure3B
+Test (3B): test failure of leaders (reliable network)...
+  ... Passed --  time  4.7s #peers 3 #RPCs   294 #Ops    3
+--- PASS: TestLeaderFailure3B (5.03s)
+=== RUN   TestFailAgree3B
+Test (3B): agreement after follower reconnects (reliable network)...
+  ... Passed --  time  3.9s #peers 3 #RPCs   134 #Ops    7
+--- PASS: TestFailAgree3B (4.37s)
+=== RUN   TestFailNoAgree3B
+Test (3B): no agreement if too many followers disconnect (reliable network)...
+  ... Passed --  time  3.3s #peers 5 #RPCs   316 #Ops    2
+--- PASS: TestFailNoAgree3B (3.81s)
+=== RUN   TestConcurrentStarts3B
+Test (3B): concurrent Start()s (reliable network)...
+  ... Passed --  time  0.6s #peers 3 #RPCs    24 #Ops    0
+--- PASS: TestConcurrentStarts3B (1.07s)
+=== RUN   TestRejoin3B
+Test (3B): rejoin of partitioned leader (reliable network)...
+  ... Passed --  time  5.7s #peers 3 #RPCs   282 #Ops    4
+--- PASS: TestRejoin3B (6.05s)
+=== RUN   TestBackup3B
+Test (3B): leader backs up quickly over incorrect follower logs (reliable network)...
+  ... Passed --  time 19.1s #peers 5 #RPCs  2568 #Ops  102
+--- PASS: TestBackup3B (19.68s)
+=== RUN   TestCount3B
+Test (3B): RPC counts aren't too high (reliable network)...
+  ... Passed --  time  2.2s #peers 3 #RPCs    72 #Ops    0
+--- PASS: TestCount3B (2.71s)
+PASS
+ok      6.5840/raft1    51.273s

@@ -64,6 +64,40 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 		}
 
 		// 3B 以后你会在这里处理日志同步的 reply.Success 为 false 的情况
+		//如果追加日志成功
+		if reply.Success {
+			newMathIdx := args.PrevLogIndex + len(args.Entries)
+			if newMathIdx > rf.matchIndex[server] {
+				rf.matchIndex[server] = newMathIdx
+			}
+			rf.nextIndex[server] = rf.matchIndex[server] + 1
+
+			//更新提交的日志
+			rf.updateCommitIndex()
+		} else {
+			//如果失败，根据reply.ConflictIndex实现快速跳转
+			if reply.ConflictTerm == -1 {
+				//日志过短
+				rf.nextIndex[server] = reply.ConflictIndex
+			} else {
+				//存在冲突任期
+				flag := false //是否存在冲突任期
+				//这里不能用len(rf.logs)-1，得用历史的
+				for i := args.PrevLogIndex; i > 0; i-- {
+					if rf.logs[i].Term == reply.ConflictTerm {
+						flag = true
+						rf.nextIndex[server] = i + 1
+						break
+					}
+				}
+
+				if !flag {
+					//如果找不到，就需要从冲突下标开始重新查找
+					rf.nextIndex[server] = reply.ConflictIndex
+				}
+			}
+
+		}
 	}
 	return ok
 }
@@ -86,4 +120,35 @@ func (rf *Raft) isLogUpToDate(args *RequestVoteArgs) bool {
 // 随机选举超时时间生成 150-300ms（论文推荐）
 func (rf *Raft) randElectionTimeout() time.Duration {
 	return time.Duration(150+rand.Intn(150)) * time.Millisecond
+}
+
+// 日志提交应用-leader专属
+func (rf *Raft) updateCommitIndex() {
+	if rf.state != Leader {
+		return
+	}
+	//将没有应用到状态机的日志
+	for i := len(rf.logs) - 1; i > rf.commitIndex; i-- {
+
+		//只能提交当前任期的日志
+		if rf.logs[i].Term == rf.term {
+			cnt := 1
+			for j := range rf.peers {
+				if j != rf.me && rf.matchIndex[j] >= i { //如果已经同步到了i
+					cnt++
+				}
+			}
+			//大多数节点应用了
+			if cnt >= len(rf.peers)/2+1 {
+				rf.commitIndex = i
+				rf.applyCond.Broadcast() //唤醒applier
+				break                    // 找到了最大的 N，后续更小的不用找了
+			}
+		} else if rf.logs[i].Term < rf.term {
+			// 如果日志任期已经小于当前任期，根据 Raft 属性，
+			// 之后更早的日志也不可能满足 "当前任期" 且 "多数派同步" 了
+			break
+		}
+
+	}
 }
