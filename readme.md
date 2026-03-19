@@ -152,3 +152,44 @@ Test (3B): RPC counts aren't too high (reliable network)...
 --- PASS: TestCount3B (2.71s)
 PASS
 ok      6.5840/raft1    51.273s
+
+lcz@iv-yef3xahqtc5i3z5jzmr5:~/mit6.5840/6.5840/src$ make RUN="-run 3C" raft1
+go build -race -o main/raft1d main/raft1d.go
+cd raft1 && go test -v -race -run 3C 
+=== RUN   TestPersist13C
+Test (3C): basic persistence (reliable network)...
+  ... Passed --  time  3.3s #peers 3 #RPCs    98 #Ops    6
+--- PASS: TestPersist13C (3.75s)
+=== RUN   TestPersist23C
+Test (3C): more persistence (reliable network)...
+  ... Passed --  time 13.7s #peers 5 #RPCs   568 #Ops   16
+--- PASS: TestPersist23C (14.36s)
+=== RUN   TestPersist33C
+Test (3C): partitioned leader and one follower crash, leader restarts (reliable network)...
+  ... Passed --  time  1.5s #peers 3 #RPCs    48 #Ops    4
+--- PASS: TestPersist33C (1.84s)
+=== RUN   TestFigure83C
+Test (3C): Figure 8 (reliable network)...
+2026/03/18 22:15:05 6PCdkEFTs2eiMT_RlFB1: dmxsrv.reader: clnt ACu3swj2_8gbs1Wd6nbn ReadCall err read unix /tmp/6.5840-6PCdkEFTs2eiMT_RlFB1->@: read: connection reset by peer
+2026/03/18 22:15:47 6PCdkEFTs2eiMT_RlFB1: dmxsrv.reader: clnt 5VPxjteaE_i4P1o9h71T ReadCall err read unix /tmp/6.5840-6PCdkEFTs2eiMT_RlFB1->@: read: connection reset by peer
+  ... Passed --  time 51.8s #peers 5 #RPCs  2369 #Ops    2
+--- PASS: TestFigure83C (52.30s)
+=== RUN   TestUnreliableAgree3C
+Test (3C): unreliable agreement (unreliable network)...
+  ... Passed --  time  3.4s #peers 5 #RPCs   220 #Ops  246
+--- PASS: TestUnreliableAgree3C (4.02s)
+=== RUN   TestFigure8Unreliable3C
+Test (3C): Figure 8 (unreliable) (unreliable network)...
+  ... Passed --  time 48.0s #peers 5 #RPCs  7496 #Ops    2
+2026/03/18 22:16:44 T5AgHTtizWPRzjsYwAQ6: dmxsrv.reader: clnt UkD_e2Q-b5OG3f1PBPSa ReadCall err read unix /tmp/6.5840-T5AgHTtizWPRzjsYwAQ6->@: read: connection reset by peer
+--- PASS: TestFigure8Unreliable3C (48.77s)
+=== RUN   TestReliableChurn3C
+Test (3C): churn (reliable network)...
+  ... Passed --  time 16.6s #peers 5 #RPCs  1084 #Ops    1
+--- PASS: TestReliableChurn3C (17.17s)
+=== RUN   TestUnreliableChurn3C
+Test (3C): unreliable churn (unreliable network)...
+  ... Passed --  time 16.8s #peers 5 #RPCs  1028 #Ops    1
+--- PASS: TestUnreliableChurn3C (17.46s)
+PASS
+ok      6.5840/raft1    160.685s

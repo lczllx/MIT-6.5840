@@ -8,14 +8,14 @@ package raft
 // raft interface.
 
 import (
-	//  "bytes"
+	"bytes"
 	//"math/rand"
 
 	"sync"
 	"sync/atomic"
 	"time"
 
-	//  "6.5840/labgob"
+	"6.5840/labgob"
 	"6.5840/labrpc"
 	"6.5840/raftapi"
 	tester "6.5840/tester1"
@@ -197,8 +197,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		if args.Term > rf.term {
 			rf.term = args.Term
 			rf.votedFor = -1 //重置投票
+			rf.state = Follower
+			rf.persist()
 		}
-		rf.state = Follower
 	}
 	//检查候选人日志是否和我的一样新
 	isuptodate := rf.isLogUpToDate(args)
@@ -206,15 +207,17 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	//投票给他，重置选举计时器
 	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && isuptodate {
 		rf.votedFor = args.CandidateId
+		rf.persist()
 		reply.VoteGranted = true
 		rf.lastHeartBeatTime = time.Now()
+		rf.state = Follower
+
 		DPrintf("[%d] RequestVote grant to %d term=%d", rf.me, args.CandidateId, rf.term)
 	} else {
 		reply.VoteGranted = false
 		DPrintf("[%d] RequestVote reject: votedFor=%d or !isUpToDate", rf.me, rf.votedFor)
 	}
 	reply.Term = rf.term
-
 }
 
 // ----------------------------------ticker------------------------------------------
@@ -295,6 +298,7 @@ func (rf *Raft) startElection() {
 	rf.state = Candidate //切换到候选人
 	rf.term++            //任期++
 	rf.votedFor = rf.me  //投票给自己
+	rf.persist()
 	rf.votenums = 1
 	DPrintf("[%d] startElection: 转为 Candidate term=%d", rf.me, rf.term)
 	rf.lastHeartBeatTime = time.Now()             //更新最后的心跳时间
@@ -329,6 +333,7 @@ func (rf *Raft) startElection() {
 					}
 					rf.state = Follower
 					rf.votedFor = -1
+					rf.persist()
 					rf.votenums = 0
 					DPrintf("[%d] startElection: 收到更大 term 退回 Follower from=%d replyTerm=%d", rf.me, server, reply.Term)
 					rf.mu.Unlock()
@@ -346,6 +351,7 @@ func (rf *Raft) startElection() {
 						//条件满足，变为leader
 						rf.state = Leader
 						rf.votedFor = -1
+						rf.persist()
 						rf.votenums = 0
 						DPrintf("[%d] startElection: 当选 Leader term=%d votes=%d", rf.me, rf.term, rf.votenums+1)
 						// 初始化 nextIndex 和 matchIndex
@@ -432,6 +438,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if args.Term > rf.term {
 		rf.term = args.Term
 		rf.votedFor = -1
+		rf.persist()
 		DPrintf("[%d] step down to Follower due to AE term=%d", rf.me, rf.term)
 	}
 	rf.state = Follower
@@ -458,6 +465,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	//追加日志
+	isChange := false
 	for i, entry := range args.Entries {
 		idx := i + args.PrevLogIndex + 1
 		if idx < len(rf.logs) {
@@ -467,12 +475,17 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 				//将idx下标前面的日志进行切片保留
 				rf.logs = rf.logs[:idx]
 				rf.logs = append(rf.logs, entry)
+				isChange = true
 			}
 			//如果任期一样，说明这一段已经同步过了，下一条
 		} else {
 			//超出本地的日志长度，直接追加
 			rf.logs = append(rf.logs, entry)
+			isChange = true
 		}
+	}
+	if isChange {
+		rf.persist()
 	}
 
 	//更新CommitIndex
@@ -501,6 +514,13 @@ func (rf *Raft) persist() {
 	// e.Encode(rf.yyy)
 	// raftstate := w.Bytes()
 	// rf.persister.Save(raftstate, nil)
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.term)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.logs)
+	raftstate := w.Bytes()
+	rf.persister.Save(raftstate, nil)
 
 }
 
@@ -511,17 +531,20 @@ func (rf *Raft) readPersist(data []byte) {
 	}
 	// Your code here (3C).
 	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var term int
+	var vorfor int
+	var logs []LogEntry
+	if d.Decode(&term) != nil ||
+		d.Decode(&vorfor) != nil ||
+		d.Decode(&logs) != nil {
+		DPrintf("readPersist err")
+	} else {
+		rf.term = term
+		rf.votedFor = vorfor
+		rf.logs = logs
+	}
 
 }
 
@@ -578,7 +601,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	index := len(rf.logs)
 	rf.logs = append(rf.logs, LogEntry{Term: term, Command: command})
 	isLeader = true
-	//rf.persist()//持久化 3C
+	rf.persist() //持久化 3C
 	return index, term, isLeader
 }
 

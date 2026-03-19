@@ -56,6 +56,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 			rf.term = reply.Term
 			rf.state = Follower
 			rf.votedFor = -1
+			rf.persist()
 			return ok
 		}
 		// 2. 状态检查
