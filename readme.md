@@ -193,3 +193,37 @@ Test (3C): unreliable churn (unreliable network)...
 --- PASS: TestUnreliableChurn3C (17.46s)
 PASS
 ok      6.5840/raft1    160.685s
+
+lcz@iv-yef3xahqtc5i3z5jzmr5:~/mit6.5840/6.5840/src$ make RUN="-run 3D" raft1
+go build -race -o main/raft1d main/raft1d.go
+cd raft1 && go test -v -race -run 3D 
+=== RUN   TestSnapshotBasic3D
+Test (3D): snapshots basic (reliable network)...
+  ... Passed --  time  3.1s #peers 3 #RPCs   542 #Ops   31
+--- PASS: TestSnapshotBasic3D (3.51s)
+=== RUN   TestSnapshotInstall3D
+Test (3D): install snapshots (disconnect) (reliable network)...
+  ... Passed --  time 32.4s #peers 3 #RPCs  1794 #Ops   91
+--- PASS: TestSnapshotInstall3D (32.87s)
+=== RUN   TestSnapshotInstallUnreliable3D
+Test (3D): install snapshots (disconnect) (unreliable network)...
+  ... Passed --  time 59.8s #peers 3 #RPCs  2738 #Ops   91
+--- PASS: TestSnapshotInstallUnreliable3D (60.28s)
+=== RUN   TestSnapshotInstallCrash3D
+Test (3D): install snapshots (crash) (reliable network)...
+  ... Passed --  time 27.9s #peers 3 #RPCs  1518 #Ops   91
+--- PASS: TestSnapshotInstallCrash3D (28.26s)
+=== RUN   TestSnapshotInstallUnCrash3D
+Test (3D): install snapshots (crash) (unreliable network)...
+  ... Passed --  time 34.1s #peers 3 #RPCs  1644 #Ops   91
+--- PASS: TestSnapshotInstallUnCrash3D (34.39s)
+=== RUN   TestSnapshotAllCrash3D
+Test (3D): crash and restart all servers (unreliable network)...
+  ... Passed --  time  8.6s #peers 3 #RPCs   362 #Ops   67
+--- PASS: TestSnapshotAllCrash3D (9.11s)
+=== RUN   TestSnapshotInit3D
+Test (3D): snapshot initialization after crash (unreliable network)...
+  ... Passed --  time  2.3s #peers 3 #RPCs    80 #Ops   14
+--- PASS: TestSnapshotInit3D (2.78s)
+PASS
+ok      6.5840/raft1    172.227s

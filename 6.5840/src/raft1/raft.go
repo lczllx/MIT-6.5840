@@ -103,18 +103,6 @@ type Raft struct {
 	hasPendingSnapshot bool
 }
 
-// -------------------------------rpc请求参数和回复参数--------------------------------
-// example RequestVote RPC arguments structure.
-// field names must start with capital letters!
-
-type RequestVoteArgs struct { //投票请求参数
-	// Your data here (3A, 3B).
-	Term         int //候选人的任期
-	CandidateId  int //候选人的ID
-	LastLogIndex int //候选人的最后一个日志条目的索引
-	LastLogTerm  int //候选人的最后一个日志条目的任期
-}
-
 // -------------------------------
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
@@ -171,6 +159,65 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	return rf
 }
 
+// 追加日志到状态机
+func (rf *Raft) applier() {
+	for !rf.Killed() {
+		rf.mu.Lock()
+		if rf.hasPendingSnapshot {
+			msg := rf.pendingSnapshot
+			rf.hasPendingSnapshot = false
+			snapIdx := msg.SnapshotIndex
+			rf.mu.Unlock()
+			rf.applyChan <- msg
+			rf.mu.Lock()
+			if snapIdx > rf.lastApplied {
+				rf.lastApplied = snapIdx
+			}
+			rf.applyCond.Broadcast()
+			rf.mu.Unlock()
+			continue
+		}
+
+		// 若有待安装快照，即使 commitIndex==lastApplied 也必须醒来处理快照；
+		// 否则仅 Broadcast 设置了 hasPendingSnapshot 时，条件仍为 commitIndex<=lastApplied，会永远 Wait。
+		for rf.commitIndex <= rf.lastApplied && !rf.hasPendingSnapshot {
+			rf.applyCond.Wait()
+		}
+
+		if rf.hasPendingSnapshot {
+			rf.mu.Unlock()
+			continue
+		}
+
+		nextIdx := rf.lastApplied + 1
+		if nextIdx > rf.commitIndex {
+			rf.mu.Unlock()
+			continue
+		}
+
+		phyIdx := rf.getPhysicIdx(nextIdx)
+		if phyIdx < 0 || phyIdx >= len(rf.logs) {
+			rf.mu.Unlock()
+			continue
+		}
+		entry := rf.logs[phyIdx]
+		rf.mu.Unlock()
+
+		rf.applyChan <- raftapi.ApplyMsg{
+			CommandValid: true,
+			Command:      entry.Command,
+			CommandIndex: nextIdx,
+		}
+
+		rf.mu.Lock()
+		if nextIdx > rf.lastApplied {
+			rf.lastApplied = nextIdx
+		}
+		rf.mu.Unlock()
+	}
+
+}
+
 // 上层（KVServer）调用的主动截断函数
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	rf.mu.Lock()
@@ -195,6 +242,27 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	rf.LastIncludedIndex = index
 	//确保截断后的日志和快照字节流一起落盘
 	rf.saveStateAndSnapshot(snapshot)
+}
+
+// 把 Leader 现有的快照完整地发给 Follower，让 Follower 直接跳级到快照所在的位置
+func (rf *Raft) pushInstallSnapshot(peer int) {
+	data := rf.persister.ReadSnapshot()
+	rf.mu.Lock()
+	args := InstallSnapshotArgs{
+		Term:              rf.currentTerm,
+		LeaderId:          rf.me,
+		LastIncludedIndex: rf.LastIncludedIndex,
+		LastIncludedTerm:  rf.LastIncludedTerm,
+		Data:              data,
+
+		Done:   true,
+		Offset: 0,
+	}
+	reply := InstallSnapshotReply{}
+	rf.mu.Unlock()
+
+	rf.sendInstallSnapshot(peer, &args, &reply)
+
 }
 
 // ----------------------------------ticker------------------------------------------
@@ -230,6 +298,7 @@ func (rf *Raft) ticker() {
 
 }
 
+// -----------------------broadcastHeartbeat----------------------------------
 // 广播心跳 3B要加上日志
 func (rf *Raft) broadcastHeartbeat() {
 	rf.mu.Lock()
@@ -272,27 +341,6 @@ func (rf *Raft) broadcastHeartbeat() {
 		// 发送 RPC
 		go rf.sendAppendEntries(peer, &args, &AppendEntriesReply{})
 	}
-
-}
-
-// 把 Leader 现有的快照完整地发给 Follower，让 Follower 直接跳级到快照所在的位置
-func (rf *Raft) pushInstallSnapshot(peer int) {
-	data := rf.persister.ReadSnapshot()
-	rf.mu.Lock()
-	args := InstallSnapshotArgs{
-		Term:              rf.currentTerm,
-		LeaderId:          rf.me,
-		LastIncludedIndex: rf.LastIncludedIndex,
-		LastIncludedTerm:  rf.LastIncludedTerm,
-		Data:              data,
-
-		Done:   true,
-		Offset: 0,
-	}
-	reply := InstallSnapshotReply{}
-	rf.mu.Unlock()
-
-	rf.sendInstallSnapshot(peer, &args, &reply)
 
 }
 
@@ -383,65 +431,6 @@ func (rf *Raft) startElection() {
 				}
 			}
 		}(i)
-	}
-
-}
-
-// 追加日志到状态机
-func (rf *Raft) applier() {
-	for !rf.Killed() {
-		rf.mu.Lock()
-		if rf.hasPendingSnapshot {
-			msg := rf.pendingSnapshot
-			rf.hasPendingSnapshot = false
-			snapIdx := msg.SnapshotIndex
-			rf.mu.Unlock()
-			rf.applyChan <- msg
-			rf.mu.Lock()
-			if snapIdx > rf.lastApplied {
-				rf.lastApplied = snapIdx
-			}
-			rf.applyCond.Broadcast()
-			rf.mu.Unlock()
-			continue
-		}
-
-		// 若有待安装快照，即使 commitIndex==lastApplied 也必须醒来处理快照；
-		// 否则仅 Broadcast 设置了 hasPendingSnapshot 时，条件仍为 commitIndex<=lastApplied，会永远 Wait。
-		for rf.commitIndex <= rf.lastApplied && !rf.hasPendingSnapshot {
-			rf.applyCond.Wait()
-		}
-
-		if rf.hasPendingSnapshot {
-			rf.mu.Unlock()
-			continue
-		}
-
-		nextIdx := rf.lastApplied + 1
-		if nextIdx > rf.commitIndex {
-			rf.mu.Unlock()
-			continue
-		}
-
-		phyIdx := rf.getPhysicIdx(nextIdx)
-		if phyIdx < 0 || phyIdx >= len(rf.logs) {
-			rf.mu.Unlock()
-			continue
-		}
-		entry := rf.logs[phyIdx]
-		rf.mu.Unlock()
-
-		rf.applyChan <- raftapi.ApplyMsg{
-			CommandValid: true,
-			Command:      entry.Command,
-			CommandIndex: nextIdx,
-		}
-
-		rf.mu.Lock()
-		if nextIdx > rf.lastApplied {
-			rf.lastApplied = nextIdx
-		}
-		rf.mu.Unlock()
 	}
 
 }
@@ -568,7 +557,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	return index, term, true
 }
 
-//---------------------------------dead--------------------------------------
+//---------------------------------kill--------------------------------------
 
 func (rf *Raft) Killed() bool {
 	z := atomic.LoadInt32(&rf.dead)

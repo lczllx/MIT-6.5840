@@ -8,7 +8,17 @@ import (
 
 // example RequestVote RPC reply structure.
 // field names must start with capital letters!
+// -------------------------------rpc请求参数和回复参数--------------------------------
+// example RequestVote RPC arguments structure.
+// field names must start with capital letters!
 
+type RequestVoteArgs struct { //投票请求参数
+	// Your data here (3A, 3B).
+	Term         int //候选人的任期
+	CandidateId  int //候选人的ID
+	LastLogIndex int //候选人的最后一个日志条目的索引
+	LastLogTerm  int //候选人的最后一个日志条目的任期
+}
 type RequestVoteReply struct { //投票回复参数
 	// Your data here (3A).
 	Term        int  //leader的当前任期，给候选人自行更新
@@ -53,7 +63,6 @@ type InstallSnapshotArgs struct {
 	Done   bool //是否是最后一个快照块
 	Offset int  //数据块在快照文件中位置的字节偏移量
 }
-
 type InstallSnapshotReply struct {
 	Term int //当前任期，供leader的自我更新
 }
