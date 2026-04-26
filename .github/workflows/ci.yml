@@ -1,0 +1,98 @@
+# Go 模块与 make 均在 6.5840/src（与课程 handin 目录一致）。
+
+name: 6.5840 CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+  workflow_dispatch:
+    inputs:
+      raft_test_regex:
+        description: "传给 go test -run 的 raft1 子串（与 make RUN= 一致，默认 3A–3D 全文）"
+        required: false
+        default: "3A|3B|3C|3D"
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+env:
+  RACE: "-race"
+
+defaults:
+  run:
+    working-directory: 6.5840/src
+
+jobs:
+  mr:
+    name: "Lab1 MapReduce (make mr)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 6.5840/src/go.mod
+          cache-dependency-path: 6.5840/src/go.sum
+      - name: Build workers、coordinator 与 mrapps 插件
+        run: |
+          set -e
+          go build $RACE -o main/mrsequential main/mrsequential.go
+          go build $RACE -o main/mrcoordinator main/mrcoordinator.go
+          go build $RACE -o main/mrworker main/mrworker.go
+          (cd mrapps && go build $RACE -buildmode=plugin wc.go)
+          (cd mrapps && go build $RACE -buildmode=plugin indexer.go)
+          (cd mrapps && go build $RACE -buildmode=plugin mtiming.go)
+          (cd mrapps && go build $RACE -buildmode=plugin rtiming.go)
+          (cd mrapps && go build $RACE -buildmode=plugin jobcount.go)
+          (cd mrapps && go build $RACE -buildmode=plugin early_exit.go)
+          (cd mrapps && go build $RACE -buildmode=plugin crash.go)
+          (cd mrapps && go build $RACE -buildmode=plugin nocrash.go)
+      - name: go test ./mr
+        run: go test -v -count=1 $RACE ./mr
+
+  kvsrv1:
+    name: "Lab1 kvsrv1 (make kvsrv1)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 6.5840/src/go.mod
+          cache-dependency-path: 6.5840/src/go.sum
+      - run: go build $RACE -o main/kvsrv1d main/kvsrv1d.go
+      - run: go test -v -count=1 $RACE ./kvsrv1
+
+  lock1:
+    name: "Lab1 lock (make lock1)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 6.5840/src/go.mod
+          cache-dependency-path: 6.5840/src/go.sum
+      - run: go build $RACE -o main/kvsrv1d main/kvsrv1d.go
+      - run: go test -v -count=1 $RACE ./kvsrv1/lock
+
+  raft1:
+    name: "Lab3 raft1 3A–3D (make raft1)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 6.5840/src/go.mod
+          cache-dependency-path: 6.5840/src/go.sum
+      - name: go build main/raft1d
+        run: go build $RACE -o main/raft1d main/raft1d.go
+      - name: go test ./raft1
+        run: |
+          RX="${{ github.event.inputs.raft_test_regex || '3A|3B|3C|3D' }}"
+          echo "go test -run $RX"
+          go test -v -count=1 -timeout=45m $RACE -run "$RX" ./raft1
