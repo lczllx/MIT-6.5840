@@ -344,4 +344,6 @@ ok      6.5840/raft1    172.227s
 ## 5. CI 与 Docker
 
 - 推送/PR 到 `main` 或 `master` 时，GitHub Actions 会在 `6.5840/src` 下跑与上表同源的测试（`./mr`、`kvsrv1`、`kvsrv1/lock`、`raft1` 默认 3A–3D 全文），同样带 `-race`。
-- 在 **`mit6.5840/6.5840/`** 下执行 `docker build` / `docker run`，镜像内会顺序执行同类测试。详见 `Dockerfile` 顶部注释与 `.github/workflows/ci.yml`。
+- 在 **`mit6.5840/6.5840/`** 下执行 `docker build` / `docker run`，镜像内会顺序执行同类测试。详见 `Dockerfile` 顶部注释与 `.github/workflows/ci.yml`。 
+
+test
