@@ -1,4 +1,5 @@
 # 在「含 Makefile 与 src/ 的这一层」构建，例如：cd mit6.5840/6.5840 && docker build -t 6.5840-mit .
+# 国内若 go mod 拉取超时，默认已用 goproxy.cn；要改回官方： docker build --build-arg GOPROXY=https://proxy.golang.org,direct ...
 # 覆盖 CMD 示例：docker run --rm 6.5840-mit bash -lc "go test -v -count=1 -run '3A' -race ./raft1"
 
 FROM golang:1.22-bookworm
@@ -6,6 +7,9 @@ FROM golang:1.22-bookworm
 WORKDIR /app
 COPY src/ ./
 
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=${GOPROXY}
+ENV GOSUMDB=sum.golang.google.cn
 ENV CGO_ENABLED=1
 
 RUN go mod download
