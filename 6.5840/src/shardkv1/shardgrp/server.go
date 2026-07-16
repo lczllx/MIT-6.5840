@@ -1,19 +1,17 @@
 package shardgrp
 
 import (
-
 	"6.5840/kvraft1/rsm"
 	"6.5840/kvsrv1/rpc"
 	"6.5840/labgob"
 	"6.5840/labrpc"
 	"6.5840/shardkv1/shardgrp/shardrpc"
-	"6.5840/tester1"
+	tester "6.5840/tester1"
 )
 
 const (
 	ENVKEY = "65840ENV"
 )
-
 
 type KVServer struct {
 	me  int
@@ -23,12 +21,10 @@ type KVServer struct {
 	// Your code here
 }
 
-
 func (kv *KVServer) DoOp(req any) any {
 	// Your code here
 	return nil
 }
-
 
 func (kv *KVServer) Snapshot() []byte {
 	// Your code here
@@ -41,10 +37,14 @@ func (kv *KVServer) Restore(data []byte) {
 
 func (kv *KVServer) Get(args *rpc.GetArgs, reply *rpc.GetReply) {
 	// Your code here
+	err, _ := kv.rsm.Submit(args, args.ClntId, args.SeqNum)
+	reply.Err = err
 }
 
 func (kv *KVServer) Put(args *rpc.PutArgs, reply *rpc.PutReply) {
 	// Your code here
+	err, _ := kv.rsm.Submit(args, args.ClntId, args.SeqNum)
+	reply.Err = err
 }
 
 // Freeze the specified shard (i.e., reject future Get/Puts for this

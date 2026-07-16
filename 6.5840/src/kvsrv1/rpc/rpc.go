@@ -22,6 +22,8 @@ type PutArgs struct {
 	Key     string
 	Value   string
 	Version Tversion
+	ClntId  int64 // 客户端唯一id ，MakeClerk 时随机生成
+	SeqNum  int64 // 客户的请求编号， 每次 Get/Put 前 +1
 }
 
 type PutReply struct {
@@ -29,7 +31,9 @@ type PutReply struct {
 }
 
 type GetArgs struct {
-	Key string
+	Key    string
+	ClntId int64 // 客户端唯一id ，MakeClerk 时随机生成
+	SeqNum int64 // 客户的请求编号， 每次 Get/Put 前 +1
 }
 
 type GetReply struct {
@@ -37,4 +41,3 @@ type GetReply struct {
 	Version Tversion
 	Err     Err
 }
-

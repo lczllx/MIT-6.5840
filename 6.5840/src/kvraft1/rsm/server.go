@@ -8,7 +8,7 @@ import (
 	"6.5840/kvsrv1/rpc"
 	"6.5840/labgob"
 	"6.5840/labrpc"
-	"6.5840/tester1"
+	tester "6.5840/tester1"
 )
 
 type Inc struct {
@@ -38,6 +38,7 @@ type rsmSrv struct {
 	mu      sync.Mutex
 	rsm     *RSM
 	counter int
+	nextId  int64 // id
 }
 
 func newRSMSrv(ends []*labrpc.ClientEnd, srv int, persister *tester.Persister, maxraftstate int) *rsmSrv {
@@ -60,7 +61,8 @@ func (rs *rsmSrv) GetCounter() int {
 
 func (rs *rsmSrv) DoOp(req any) any {
 	//log.Printf("%d: DoOp: %T(%v)", rs.me, req, req)
-	switch req.(type) {
+	op := req.(Op)
+	switch op.Req.(type) {
 	case Inc:
 		rs.mu.Lock()
 		rs.counter += 1
@@ -93,7 +95,11 @@ func (rs *rsmSrv) Restore(data []byte) {
 }
 
 func (rs *rsmSrv) Submit(req any) (rpc.Err, any) {
-	err, rep := rs.rsm.Submit(req)
+	rs.mu.Lock()
+	rs.nextId++
+	id := rs.nextId
+	rs.mu.Unlock()
+	err, rep := rs.rsm.Submit(req, id, 0)
 	//log.Printf("Submit %d %v %v %T", rs.me, err, rep, rep)
 	return err, rep
 }
