@@ -61,8 +61,7 @@ func (rs *rsmSrv) GetCounter() int {
 
 func (rs *rsmSrv) DoOp(req any) any {
 	//log.Printf("%d: DoOp: %T(%v)", rs.me, req, req)
-	op := req.(Op)
-	switch op.Req.(type) {
+	switch req.(type) {
 	case Inc:
 		rs.mu.Lock()
 		rs.counter += 1

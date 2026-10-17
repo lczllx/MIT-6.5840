@@ -5,8 +5,7 @@ import (
 	"6.5840/kvsrv1/rpc"
 	"6.5840/labgob"
 	"6.5840/labrpc"
-	"6.5840/tester1"
-
+	tester "6.5840/tester1"
 )
 
 type KVServer struct {
@@ -14,6 +13,9 @@ type KVServer struct {
 	rsm *rsm.RSM
 
 	// Your definitions here.
+	seqMap    map[int64]int       //为了确保seq只执行一次	clientId / seqId
+	waitChMap map[int]chan rsm.Op //传递由下层Raft服务的appCh传过来的command	index / chan(Op)
+	kvPersist map[string]string   // 存储持久化的KV键值对	K / V
 }
 
 // To type-cast req to the right type, take a look at Go's type switches or type
@@ -23,6 +25,7 @@ type KVServer struct {
 // https://go.dev/tour/methods/15
 func (kv *KVServer) DoOp(req any) any {
 	// Your code here
+
 	return nil
 }
 
@@ -57,7 +60,6 @@ func StartKVServer(servers []*labrpc.ClientEnd, gid tester.Tgid, me int, persist
 	labgob.Register(rpc.GetArgs{})
 
 	kv := &KVServer{me: me}
-
 
 	kv.rsm = rsm.MakeRSM(servers, me, persister, maxraftstate, kv)
 	// You may need initialization code here.

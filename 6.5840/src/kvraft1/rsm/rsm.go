@@ -16,18 +16,25 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Req    any   //请求类型
+	Req    any   //上层请求
 	ClntId int64 //clerk 的编号
 	SeqNum int64 //这个clerk的请求编号
+	Id     int64 //全局唯一id
 }
 
 type result struct {
 	err rpc.Err
 	val any
 }
+
 type dupResult struct {
 	seqNum int64
 	result any // DoOp 的返回值，重试时直接返回
+}
+
+type waiter struct {
+	id int64
+	ch chan result // 带缓冲，cap=1
 }
 
 // A server (i.e., ../server.go) that wants to replicate itself calls
@@ -51,9 +58,10 @@ type RSM struct {
 	sm           StateMachine
 	// Your definitions here.
 	lastApplied map[int64]*dupResult //clntId →  seqNum,result
-	waitTable   map[int]chan result  //index->等待chanel
+	waitTable   map[int]*waiter      //index->等待者
 	killed      atomic.Bool
 	opTimeout   time.Duration
+	nextId      int64 // 原子递增
 }
 
 // servers[] contains the ports of the set of
@@ -78,9 +86,10 @@ func MakeRSM(servers []*labrpc.ClientEnd, me int, persister *tester.Persister, m
 		applyCh:      make(chan raftapi.ApplyMsg),
 		sm:           sm,
 		lastApplied:  make(map[int64]*dupResult),
-		waitTable:    make(map[int]chan result),
+		waitTable:    make(map[int]*waiter),
 		killed:       atomic.Bool{},
 		opTimeout:    2 * time.Second,
+		nextId:       0,
 	}
 	if !tester.UseRaftStateMachine {
 		rsm.rf = raft.Make(servers, me, persister, rsm.applyCh)
@@ -102,26 +111,49 @@ func (rsm *RSM) Submit(req any, clntId int64, seqNum int64) (rpc.Err, any) {
 	// for example: op := Op{Me: rsm.me, Id: id, Req: req}, where req
 	// is the argument to Submit and id is a unique id for the op.
 	// your code here
+	id := atomic.AddInt64(&rsm.nextId, 1)
+	op := Op{Req: req, ClntId: clntId, SeqNum: seqNum, Id: id}
 	rsm.mu.Lock()
 
-	op := Op{Req: req, ClntId: clntId, SeqNum: seqNum}
-	index, _, isLeader := rsm.rf.Start(op)
+	index, term, isLeader := rsm.rf.Start(op)
 	if !isLeader {
 		rsm.mu.Unlock()
 		return rpc.ErrWrongLeader, nil
 	}
-	res_ch := make(chan result)
-	rsm.waitTable[index] = res_ch
-	rsm.mu.Unlock()
-	select {
-	case ret := <-res_ch:
-		return ret.err, ret.val
-	case <-time.After(rsm.opTimeout):
-		rsm.mu.Lock()
-		delete(rsm.waitTable, index) // 自己删
-		rsm.mu.Unlock()
+	res_ch := make(chan result, 1)
+
+	//覆盖 index 前没通知旧 waiter
+	if old, ok := rsm.waitTable[index]; ok {
+		old.ch <- result{rpc.ErrWrongLeader, nil}
+		delete(rsm.waitTable, index)
 	}
-	return rpc.ErrWrongLeader, nil // i'm dead, try another server.
+	rsm.waitTable[index] = &waiter{id, res_ch}
+	rsm.mu.Unlock()
+
+	ticker := time.NewTicker(30 * time.Millisecond)
+	deadline := time.NewTimer(rsm.opTimeout)
+	defer ticker.Stop()
+	defer deadline.Stop()
+	for {
+		select {
+		case ret := <-res_ch:
+			return ret.err, ret.val
+		case <-ticker.C:
+			// 领导权/任期变了：日志可能已被截断，该 index 永远不会 apply
+			curTerm, stillLeader := rsm.rf.GetState()
+			if curTerm != term || !stillLeader {
+				rsm.mu.Lock()
+				rsm.cleanup(index, id)
+				rsm.mu.Unlock()
+				return rpc.ErrWrongLeader, nil
+			}
+		case <-deadline.C:
+			rsm.mu.Lock()
+			rsm.cleanup(index, id)
+			rsm.mu.Unlock()
+			return rpc.ErrWrongLeader, nil
+		}
+	}
 }
 
 // applier goroutine — 一个单独的 goroutine，在 MakeRSM 时启动
@@ -129,21 +161,49 @@ func (rsm *RSM) applier() {
 	for msg := range rsm.applyCh { // 不断从 applyCh 读
 		if msg.CommandValid {
 			// msg.CommandIndex = 42, msg.Command = Op{Req: PutArgs{x, 1}, ...}
-			rsm.mu.Lock()
-			op := msg.Command.(Op)
-			dup, ok := rsm.lastApplied[op.ClntId]
-			var res any
-			if ok && op.SeqNum <= dup.seqNum { //旧请求
-				res = dup.result
-			} else {
-				res = rsm.sm.DoOp(op) // 实际执行 Put
-				rsm.lastApplied[op.ClntId] = &dupResult{seqNum: op.SeqNum, result: res}
+			op, ok := msg.Command.(Op)
+			//dup, ok := rsm.lastApplied[op.ClntId]
+
+			if !ok {
+				continue
 			}
-			ch, ok := rsm.waitTable[msg.CommandIndex] // 找到 index  的等待 channel
-			rsm.mu.Unlock()
+			res := rsm.sm.DoOp(op.Req)
+
+			rsm.mu.Lock()
+			w, ok := rsm.waitTable[msg.CommandIndex] // 找到 index  的等待 channel
+
 			if ok {
-				ch <- result{err: rpc.OK, val: res}
-			} // 往里面写结果
+				delete(rsm.waitTable, msg.CommandIndex)
+				rsm.mu.Unlock()
+
+				if w.id == op.Id {
+					w.ch <- result{rpc.OK, res}
+				} else {
+					// 这个 index 已被别的命令覆盖：返回别人的结果会破坏正确性
+					w.ch <- result{rpc.ErrWrongLeader, nil}
+				}
+			} else {
+				rsm.mu.Unlock()
+
+			}
+		} else {
+			continue
 		}
 	}
+	rsm.mu.Lock()
+	rsm.failAllWaiters(rpc.ErrWrongLeader)
+	rsm.mu.Unlock()
+}
+
+func (rsm *RSM) cleanup(index int, id int64) {
+	if w, ok := rsm.waitTable[index]; ok && w.id == id {
+		delete(rsm.waitTable, index)
+	}
+}
+func (rsm *RSM) failAllWaiters(err rpc.Err) {
+	for _, w := range rsm.waitTable {
+		w.ch <- result{err, nil} // ch cap=1，不会阻塞
+	}
+	rsm.waitTable = make(map[int]*waiter)
+
 }
